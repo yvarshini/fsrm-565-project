@@ -1,0 +1,38 @@
+---
+title: "FTSA Final Project Exploration"
+author: "Varshini Yanamandra"
+date: "2023-04-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# libraries
+library(tidyverse)
+library(astsa)
+library(quantmod)
+```
+
+1. Data Exploration and Visualization
+
+```{r}
+# Meta (Facebook)
+getSymbols("META", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
+chartSeries(META, theme = "white", TA = NULL, subset = "2021-01::2022-12")
+# Apple
+getSymbols("AAPL", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
+chartSeries(AAPL, theme = "white", TA = NULL, subset = "2021-01::2022-12")
+# Amazon
+getSymbols("AMZN", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
+chartSeries(AMZN, theme = "white", TA = NULL, subset = "2021-01::2022-12")
+# Netflix
+getSymbols("NFLX", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
+chartSeries(NFLX, theme = "white", TA = NULL, subset = "2021-01::2022-12")
+# Google (Alphabet Inc.)
+getSymbols("GOOG", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
+chartSeries(GOOG, theme = "white", TA = NULL, subset = "2021-01::2022-12")
+```
+
