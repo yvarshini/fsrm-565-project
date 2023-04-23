@@ -12,27 +12,47 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 # libraries
 library(tidyverse)
-library(astsa)
-library(quantmod)
+library(devtools)
+library(rbcpingarch)
+library(ggplot2)
+library(tidyr)
 ```
 
-1. Data Exploration and Visualization
+```{r}
+# installing the package from GitHub to simulate Bivariate Conditional Poisson INGARCH(1,1) process
+# devtools::install_github("luizapiancastelli/rbcpingarch")
+```
 
 ```{r}
-# Meta (Facebook)
-getSymbols("META", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
-chartSeries(META, theme = "white", TA = NULL, subset = "2021-01::2022-12")
-# Apple
-getSymbols("AAPL", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
-chartSeries(AAPL, theme = "white", TA = NULL, subset = "2021-01::2022-12")
-# Amazon
-getSymbols("AMZN", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
-chartSeries(AMZN, theme = "white", TA = NULL, subset = "2021-01::2022-12")
-# Netflix
-getSymbols("NFLX", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
-chartSeries(NFLX, theme = "white", TA = NULL, subset = "2021-01::2022-12")
-# Google (Alphabet Inc.)
-getSymbols("GOOG", from = "2012-05-18", to = "2023-04-03", src = 'yahoo')
-chartSeries(GOOG, theme = "white", TA = NULL, subset = "2021-01::2022-12")
+A = diag(c(0.3, 0.1)) #Diagonal (2x2) matrix
+B = diag(c(0.2, 0.3)) #Diagonal (2x2) matrix, can be non diagonal as long as stationarity conditions satisfied
+omega = c(2,1) 
+phi = 0.3 
+n = 500  #Time series length
+Y = rBCPINGARCH(A, B, omega, phi, n)
+head(Y)
+cor(Y)
+Y_df= data.frame('y1' =Y[,1], 'y2' = Y[,2], 't' = 1:nrow(Y))
+Y_df = pivot_longer(Y_df, cols = starts_with('y'), names_to = 'serie', values_to = 'count')
+ggplot(Y_df, aes(x = t, y = count, color = serie))+
+  geom_line()+theme_bw()+
+  labs(y = 'Count', x = 'Time')
+```
+
+```{r}
+data("Y_hep") #Loads the Brazilian hepatites count data set
+fit_diag = fit_BCP_INGARCH(Y_hep, A.diag = TRUE, B.diag = TRUE) #Diagonal model
+fit_diag$par #maximised parameter values
+fit_diag$se  #asymptotic standard errors
+fit_diag$loglik 
+fit_nd = fit_BCP_INGARCH(Y_hep, A.diag = TRUE, B.diag = FALSE) #Non-diagonal model
+fit_nd$par
+fit_nd$se
+fit_nd$loglik
+```
+
+```{r}
+model_information(fit_diag)
+model_information(fit_nd)
 ```
 
