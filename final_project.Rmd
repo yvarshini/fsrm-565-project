@@ -28,7 +28,7 @@ library(FinTS)
 library(forecast)
 library(rmgarch)
 library(depmixS4)
-
+library(FinTS)
 ```
 
 ```{r}
@@ -93,6 +93,11 @@ adfTest(as.vector(data[,"Brasilia"]), lags = 12)
 ```
 
 The p-values for both series are much greater than 0.05, so we fail to reject the null hypothesis that there is the presence of unit-root stationarity in both series.
+
+```{r}
+# LM Test
+FinTS::ArchTest(data1, lag = 12)
+```
 
 ```{r}
 ##let the ugarchspec estimate the skew and shape params
