@@ -16,7 +16,230 @@ library(devtools)
 library(rbcpingarch)
 library(ggplot2)
 library(tidyr)
+library(fBasics)
+library(tseries)
+library(astsa)
+library(TSA)
+library(fUnitRoots)
+library(fGarch)
+library(timeSeries)
+library(rugarch)
+library(FinTS)
+library(forecast)
+library(rmgarch)
+library(depmixS4)
+
 ```
+
+```{r}
+#loading the data
+data1 <- Y_hep
+hist(data1[,"Goiania"], density = TRUE, main = "Density of Goiania Hepatitis Results")
+hist(data1[,"Brasilia"], density = TRUE, main = "Density of Brasilia Hepatitis Results")
+## Both locations exhibit right skew
+```
+
+```{r}
+data <- ts(data1, frequency = 12, start = 2001, end = 2018)
+#data_b <- cbind(data1[,"Goiania"], data1[,"Brasilia"])
+
+# plotting the data
+plot(data[, 1], col = 1, ylim = c(0, 210), ylab = "Cases of Hepatitis")
+lines(data[, 2], col = "blue")
+legend(x = "top", c("Goiania", "Brasilia"), col = c(1, "blue"), lty = c(1, 1))
+
+fit_arima_x <- auto.arima(data[, "Goiania"], ic = "aic")
+fit_arima_y <- auto.arima(data[, "Brasilia"], ic = "aic")
+fit_arima_x
+fit_arima_y
+```
+
+```{r}
+# exploring the lagged relationship between the cases in the two cities
+l = nrow(data1)
+par(mfrow = c(1, 2))
+plot(data1[1:l-1, 2], data1[2:l, 1], col = "red", xlab = "Brasilia(t-1)", ylab = "Goiania(t)")
+plot(data1[1:l-1, 1], data1[2:l, 2], col = "blue", xlab = "Goiania(t-1)", ylab = "Brasilia(t)")
+```
+
+
+```{r}
+plot(data, main = "Time Series Plot of 2 Hepatitis Locations")
+#data_c <- cbind(data[,"Goiania"],data[,"Brasilia"])
+
+TSA::acf(as.vector(data[,"Goiania"]), lag.max = 12, main = "ACF for Goiania")
+# data <- diff(data, lag = 1)
+pacf(as.vector(data[,"Goiania"]), main = "")
+title("PACF for Goiania")
+```
+
+Clearly, both series are not stationary due to non-constant mean and variance, as seen in the time series plot. 
+
+For the Goiania data:
+The ACFs decay very slowly - this could indicate the presence of unit-root stationarity. The PACFs become mostly insignificant after lag 2, indicating that an AR component of order 2 could be used to model the series.
+
+```{r}
+TSA::acf(as.vector(data[,"Brasilia"]), main = "ACF for Brasilia")
+pacf(as.vector(data[,"Brasilia"]), main = "")
+title("PACF for Brasilia")
+```
+
+We see a similar trend in the ACF and PACF plots for Brasilia, as well. We might try fitting an AR model with order 2 or 3 to this data.
+
+```{r}
+# testing for unit-root stationary
+adfTest(as.vector(data[,"Goiania"]), lags = 12)
+adfTest(as.vector(data[,"Brasilia"]), lags = 12)
+```
+
+The p-values for both series are much greater than 0.05, so we fail to reject the null hypothesis that there is the presence of unit-root stationarity in both series.
+
+```{r}
+##let the ugarchspec estimate the skew and shape params
+##Trying a skewed student t with GARCH(1,1):
+spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                   mean.model = list(armaOrder = c(fit_arima_x$arma[1],
+                  fit_arima_y$arma[1])), distribution.model = "sstd")
+fit <- ugarchfit(spec, data = data1, solver.control = list(trace=0))
+fit # AIC is 7.6397
+aic <- 7.6397
+```
+
+```{r}
+##GARCH(1,0)
+spec2 <- ugarchspec(variance.model = list(model = "sGARCH",
+        garchOrder = c(1,0)),mean.model = list(armaOrder = 
+        c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sstd")
+fit2 <- ugarchfit(spec2, data = data1, solver.control = list(trace=0))
+fit2 # AIC is 7.6485
+aic <- c(aic, 7.6485)
+```
+
+```{r}
+#GARCH(0,1)
+spec3 <- ugarchspec(variance.model = list(model = "sGARCH",
+      garchOrder = c(0,1)),mean.model = list(armaOrder = 
+      c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sstd")
+fit3 <- ugarchfit(spec3, data = data1, solver.control = list(trace=0))
+fit3 # AIC is 7.7643
+aic <- c(aic, 7.7643)
+```
+
+```{r}
+##Trying a skewed-ged with GARCH(1,1):
+spec4 <- ugarchspec(variance.model = list(model = "sGARCH",
+       garchOrder = c(1,1)),mean.model = list(armaOrder = 
+       c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sged")
+fit4 <- ugarchfit(spec4, data = data1, solver.control = list(trace=0))
+fit4 # AIC is 7.6602
+aic <- c(aic, 7.6602)
+```
+
+```{r}
+#GARCH(1,0)
+spec5 <- ugarchspec(variance.model = list(model = "sGARCH",
+      garchOrder = c(1,0)),mean.model = list(armaOrder = 
+      c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sged")
+fit5 <- ugarchfit(spec5, data = data1, solver.control = list(trace=0))
+fit5 # AIC is 66.871
+aic <- c(aic, 66.871)
+```
+
+```{r}
+#GARCH(0,1)
+spec6 <- ugarchspec(variance.model = list(model = "sGARCH",
+      garchOrder = c(0,1)),mean.model = list(armaOrder = 
+      c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sged")
+fit6 <- ugarchfit(spec6, data = data1, solver.control = list(trace=0))
+fit6 # AIC is 7.7675
+aic <- c(aic, 7.7675)
+```
+
+```{r}
+### Trying higher order GARCH models under skewed t-dist
+spec7 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(2,2)),
+                   mean.model = list(armaOrder = c(fit_arima_x$arma[1],
+                    fit_arima_y$arma[1])), distribution.model = "sstd")
+fit7 <- ugarchfit(spec, data = data1, solver.control = list(trace=0))
+fit7 # AIC is 7.6397
+aic <- c(aic, 7.6397)
+```
+
+```{r}
+### Returns the same AIC value as GARCH(1,1), we shall disregard models
+### 2-7 as they did not perform as well as model 1 or parsimony dictates
+### we use simpler models with similar results.
+
+#Getting the ACF and PACF 
+resid1 <- fit@fit$residuals
+se1 <- fit@fit$sigma
+std_re <- resid1/se1
+adf.test(resid1)
+adf.test(std_re)
+plot(std_re, main = "Standardized Residual Plot", type = "l")
+TSA::acf(std_re)
+pacf(std_re)
+```
+
+```{r}
+### There appears to be no unit root present in the data! Also the 
+### standardized residuals show no obvious heteroskedasicity! 
+
+
+### Keeping the below code for now because it may serve a purpose. 
+### Using fit one since it had the lowest AIC and the difference series 
+### looks pretty good relative to non-differenced!
+
+resid2 <- fit2@fit$residuals
+se2 <- fit2@fit$sigma
+std_re2 <- resid2/se2
+resid3 <- fit3@fit$residuals
+se3 <- fit3@fit$sigma
+std_re3 <- resid3/se3
+resid4 <- fit4@fit$residuals
+se4 <- fit4@fit$sigma
+std_re4 <- resid4/se4
+resid5 <- fit5@fit$residuals
+se5 <- fit5@fit$sigma
+std_re5 <- resid5/se5
+resid6 <- fit6@fit$residuals
+se6 <- fit6@fit$sigma
+std_re6 <- resid6/se6
+```
+
+```{r}
+acf(resid1, lag.max = 12, main = "ACF for Fit 1")
+acf(std_re, lag.max = 12, main = "ACF for stdzd Fit 1")
+acf(resid2, lag.max = 12, main = "ACF for Fit 2")
+acf(resid3, lag.max = 12, main = "ACF for Fit 3")
+acf(resid4, lag.max = 12, main = "ACF for Fit 4")
+acf(resid5, lag.max = 12, main = "ACF for Fit 5")
+acf(resid6, lag.max = 12, main = "ACF for Fit 6")
+```
+
+```{r}
+pacf(resid1, lag.max = 12, main = "PACF for Fit 1")
+pacf(resid2, lag.max = 12, main = "PACF for Fit 2")
+pacf(resid3, lag.max = 12, main = "PACF for Fit 3")
+pacf(resid4, lag.max = 12, main = "PACF for Fit 4")
+pacf(resid5, lag.max = 12, main = "PACF for Fit 5")
+pacf(resid6, lag.max = 12, main = "PACF for Fit 6")
+```
+
+```{r}
+adf.test(resid1)
+adf.test(resid2)
+adf.test(resid3)
+adf.test(resid4)
+adf.test(resid5)
+adf.test(resid6)
+```
+
+```{r}
+aic
+```
+
+MODEL USED IN THE PAPER
 
 ```{r}
 # installing the package from GitHub to simulate Bivariate Conditional Poisson INGARCH(1,1) process
@@ -24,6 +247,7 @@ library(tidyr)
 ```
 
 ```{r}
+# simulating a Bivariate Conditional Poisson INGARCH(1,1) process
 A = diag(c(0.3, 0.1)) #Diagonal (2x2) matrix
 B = diag(c(0.2, 0.3)) #Diagonal (2x2) matrix, can be non diagonal as long as stationarity conditions satisfied
 omega = c(2,1) 
@@ -52,7 +276,9 @@ fit_nd$loglik
 ```
 
 ```{r}
+print("Diagonal Model")
 model_information(fit_diag)
+print("Non-Diagonal Model")
 model_information(fit_nd)
 ```
 
