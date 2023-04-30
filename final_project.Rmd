@@ -34,8 +34,9 @@ library(FinTS)
 ```{r}
 #loading the data
 data1 <- Y_hep
-hist(data1[,"Goiania"], density = TRUE, main = "Density of Goiania Hepatitis Results")
-hist(data1[,"Brasilia"], density = TRUE, main = "Density of Brasilia Hepatitis Results")
+par(mfrow = c(1, 2))
+hist(data1[,"Goiania"], density = TRUE, main = list("Density of Goiania Hepatitis Results"), font.main = 1)
+hist(data1[,"Brasilia"], density = TRUE, main = list("Density of Brasilia Hepatitis Results"), font.main = 1)
 ## Both locations exhibit right skew
 ```
 
@@ -44,30 +45,17 @@ data <- ts(data1, frequency = 12, start = 2001, end = 2018)
 #data_b <- cbind(data1[,"Goiania"], data1[,"Brasilia"])
 
 # plotting the data
-plot(data[, 1], col = 1, ylim = c(0, 210), ylab = "Cases of Hepatitis")
+plot(data[, 1], col = 1, ylim = c(0, 210), ylab = "Cases of Hepatitis", main = "Time Series Plots")
 lines(data[, 2], col = "blue")
 legend(x = "top", c("Goiania", "Brasilia"), col = c(1, "blue"), lty = c(1, 1))
-
-fit_arima_x <- auto.arima(data[, "Goiania"], ic = "aic")
-fit_arima_y <- auto.arima(data[, "Brasilia"], ic = "aic")
-fit_arima_x
-fit_arima_y
 ```
 
 ```{r}
-# exploring the lagged relationship between the cases in the two cities
-l = nrow(data1)
-par(mfrow = c(1, 2))
-plot(data1[1:l-1, 2], data1[2:l, 1], col = "red", xlab = "Brasilia(t-1)", ylab = "Goiania(t)")
-plot(data1[1:l-1, 1], data1[2:l, 2], col = "blue", xlab = "Goiania(t-1)", ylab = "Brasilia(t)")
-```
-
-
-```{r}
+par(mfrow = c(2, 1))
 plot(data, main = "Time Series Plot of 2 Hepatitis Locations")
 #data_c <- cbind(data[,"Goiania"],data[,"Brasilia"])
 
-TSA::acf(as.vector(data[,"Goiania"]), lag.max = 12, main = "ACF for Goiania")
+TSA::acf(as.vector(data[,"Goiania"]), main = "ACF for Goiania")
 # data <- diff(data, lag = 1)
 pacf(as.vector(data[,"Goiania"]), main = "")
 title("PACF for Goiania")
@@ -79,6 +67,7 @@ For the Goiania data:
 The ACFs decay very slowly - this could indicate the presence of unit-root stationarity. The PACFs become mostly insignificant after lag 2, indicating that an AR component of order 2 could be used to model the series.
 
 ```{r}
+par(mfrow = c(2, 1))
 TSA::acf(as.vector(data[,"Brasilia"]), main = "ACF for Brasilia")
 pacf(as.vector(data[,"Brasilia"]), main = "")
 title("PACF for Brasilia")
@@ -95,17 +84,56 @@ adfTest(as.vector(data[,"Brasilia"]), lags = 12)
 The p-values for both series are much greater than 0.05, so we fail to reject the null hypothesis that there is the presence of unit-root stationarity in both series.
 
 ```{r}
+# exploring the lagged relationship between the cases in the two cities
+l = nrow(data1)
+par(mfrow = c(1, 2))
+plot(data1[1:l-1, 2], data1[2:l, 1], col = "red", xlab = "Brasilia(t-1)", ylab = "Goiania(t)")
+plot(data1[1:l-1, 1], data1[2:l, 2], col = "blue", xlab = "Goiania(t-1)", ylab = "Brasilia(t)")
+mtext("Contemporaneous Correlation in the Data", side = 3, line = -2, outer = TRUE)
+```
+
+```{r}
 # LM Test
 FinTS::ArchTest(data1, lag = 12)
 ```
 
 ```{r}
+fit_arima_x <- auto.arima(data[, "Goiania"], ic = "aic")
+fit_arima_y <- auto.arima(data[, "Brasilia"], ic = "aic")
+fit_arima_x
+fit_arima_y
+```
+
+```{r}
+data1 <- as.matrix(data)
+```
+
+
+```{r}
 ##let the ugarchspec estimate the skew and shape params
 ##Trying a skewed student t with GARCH(1,1):
-spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
-                   mean.model = list(armaOrder = c(fit_arima_x$arma[1],
-                  fit_arima_y$arma[1])), distribution.model = "sstd")
-fit <- ugarchfit(spec, data = data1, solver.control = list(trace=0))
+# Define the first mean equation
+mean_eq1 <- list(armaOrder = c(0, 1, 1),
+                  seasonal = list(order = c(2, 0, 0), period = 12), distribution.model = "sstd")
+# Define the variance equation
+variance_eq <- list(model = "sGARCH", garchOrder = c(1, 1))
+# Define the first spec
+spec1 <- ugarchspec(mean.model = mean_eq1, variance.model = variance_eq)
+# Define the second mean equation
+mean_eq2 <- list(armaOrder = c(0, 1, 1),
+                 seasonal = list(order = c(1, 0, 2), period = 12),
+                 include.mean = TRUE, distribution.model = "sstd")
+# Define the second spec
+spec2 <- ugarchspec(mean.model = mean_eq2, variance.model = variance_eq)
+
+# Fit the bivariate GARCH model
+fit <- ugarchfit(data = data1, multispec = list(spec1, spec2), solver = "hybrid")
+
+
+#spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+              #     mean.model = list(armaOrder = c(fit_arima_x$arma[1],
+              #    fit_arima_y$arma[1])), distribution.model = "sstd")
+#fit <- ugarchfit(spec, data = data1, solver.control = list(trace=0))
 fit # AIC is 7.6397
 aic <- 7.6397
 ```
@@ -165,7 +193,7 @@ aic <- c(aic, 7.7675)
 spec7 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(2,2)),
                    mean.model = list(armaOrder = c(fit_arima_x$arma[1],
                     fit_arima_y$arma[1])), distribution.model = "sstd")
-fit7 <- ugarchfit(spec, data = data1, solver.control = list(trace=0))
+fit7 <- ugarchfit(spec7, data = data1, solver.control = list(trace=0))
 fit7 # AIC is 7.6397
 aic <- c(aic, 7.6397)
 ```
