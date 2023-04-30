@@ -292,19 +292,30 @@ cor(Y)
 Y_df= data.frame('y1' =Y[,1], 'y2' = Y[,2], 't' = 1:nrow(Y))
 Y_df = pivot_longer(Y_df, cols = starts_with('y'), names_to = 'serie', values_to = 'count')
 ggplot(Y_df, aes(x = t, y = count, color = serie))+
-  geom_line()+theme_bw()+
-  labs(y = 'Count', x = 'Time')
+  geom_line() + theme_bw() + 
+  labs(y = 'Count', x = 'Time') + ylim(0, 15) + ggtitle("Simulated BCP-INGARCH(1, 1) Model Data")
 ```
 
 ```{r}
 data("Y_hep") #Loads the Brazilian hepatites count data set
 fit_diag = fit_BCP_INGARCH(Y_hep, A.diag = TRUE, B.diag = TRUE) #Diagonal model
+print("DIAGONAL MODEL")
+print("Maximized Parameter Values")
 fit_diag$par #maximised parameter values
+print("Asymptotic Standard Errors")
 fit_diag$se  #asymptotic standard errors
+print("Log-Likelihood")
 fit_diag$loglik 
+```
+
+```{r}
 fit_nd = fit_BCP_INGARCH(Y_hep, A.diag = TRUE, B.diag = FALSE) #Non-diagonal model
+print("NON-DIAGONAL MODEL")
+print("Maximized Parameter Values")
 fit_nd$par
+print("Asymptotic Standard Errors")
 fit_nd$se
+print("Log-Likelihood")
 fit_nd$loglik
 ```
 
