@@ -28,7 +28,6 @@ library(FinTS)
 library(forecast)
 library(rmgarch)
 library(depmixS4)
-library(FinTS)
 ```
 
 ```{r}
@@ -42,7 +41,6 @@ hist(data1[,"Brasilia"], density = TRUE, main = list("Density of Brasilia Hepati
 
 ```{r}
 data <- ts(data1, frequency = 12, start = 2001, end = 2018)
-#data_b <- cbind(data1[,"Goiania"], data1[,"Brasilia"])
 
 # plotting the data
 plot(data[, 1], col = 1, ylim = c(0, 210), ylab = "Cases of Hepatitis", main = "Time Series Plots")
@@ -53,10 +51,8 @@ legend(x = "top", c("Goiania", "Brasilia"), col = c(1, "blue"), lty = c(1, 1))
 ```{r}
 par(mfrow = c(2, 1))
 plot(data, main = "Time Series Plot of 2 Hepatitis Locations")
-#data_c <- cbind(data[,"Goiania"],data[,"Brasilia"])
 
 TSA::acf(as.vector(data[,"Goiania"]), main = "ACF for Goiania")
-# data <- diff(data, lag = 1)
 pacf(as.vector(data[,"Goiania"]), main = "")
 title("PACF for Goiania")
 ```
@@ -97,10 +93,51 @@ mtext("Contemporaneous Correlation in the Data", side = 3, line = -2, outer = TR
 FinTS::ArchTest(data1, lag = 12)
 ```
 
+Since we noticed the presence of unit-root stationarity, let us try taking a difference.
+
+```{r}
+data.diff <- diff(data, lag = 1)
+
+plot(data.diff, main = "Time Series Plot of Differenced Data")
+```
+
+The plots looks much better in terms of the variation of the mean. We still notice that the varince is not constant, so we can not infer that the series is now stationary.
+
+```{r}
+# testing for unit-root stationary
+adfTest(as.vector(data.diff[,"Goiania"]), lags = 12)
+adfTest(as.vector(data.diff[,"Brasilia"]), lags = 12)
+```
+
+The p-values for both cities are now extremely small, so we reject the null hypothesis that there is the presence of unit-root stationarity in both series. The differencing has dealt with the unit-root stationarity. Let us check this by plotting the ACF plots again for both cities.
+
+```{r}
+par(mfrow = c(2, 1))
+TSA::acf(as.vector(data.diff[,"Goiania"]), main = "ACF for Goiania")
+TSA::acf(as.vector(data.diff[,"Brasilia"]), main = "ACF for Brasilia")
+```
+
+The ACFs now look to be well-behaved, and the presence of unit-root stationarity is now ruled out. There is a significant ACF for both cities at lag 1.
+
+```{r}
+par(mfrow = c(2, 1))
+pacf(as.vector(data.diff[,"Goiania"]), main = "")
+title("PACF for Goiania")
+
+pacf(as.vector(data.diff[,"Brasilia"]), main = "")
+title("PACF for Brasilia")
+```
+
+The PACFs look well-behaved, as well. Goiania has a significant PACF at lag 1, and Brasilia has significant PACFs at lags 1 and 2.
+
+Let us find the best fit ARIMA models for the data using the 'auto.arima' function.
+
 ```{r}
 fit_arima_x <- auto.arima(data[, "Goiania"], ic = "aic")
 fit_arima_y <- auto.arima(data[, "Brasilia"], ic = "aic")
+print("Goiania")
 fit_arima_x
+print("Brasilia")
 fit_arima_y
 ```
 
@@ -110,167 +147,219 @@ data1 <- as.matrix(data)
 
 
 ```{r}
-##let the ugarchspec estimate the skew and shape params
-##Trying a skewed student t with GARCH(1,1):
-# Define the first mean equation
-mean_eq1 <- list(armaOrder = c(0, 1, 1),
-                  seasonal = list(order = c(2, 0, 0), period = 12), distribution.model = "sstd")
-# Define the variance equation
-variance_eq <- list(model = "sGARCH", garchOrder = c(1, 1))
-# Define the first spec
-spec1 <- ugarchspec(mean.model = mean_eq1, variance.model = variance_eq)
-# Define the second mean equation
-mean_eq2 <- list(armaOrder = c(0, 1, 1),
-                 seasonal = list(order = c(1, 0, 2), period = 12),
-                 include.mean = TRUE, distribution.model = "sstd")
-# Define the second spec
-spec2 <- ugarchspec(mean.model = mean_eq2, variance.model = variance_eq)
+# let the dccspec due to the correlated and bivariate nature of the data 
+# estimate the skew and shape parameters
 
-# Fit the bivariate GARCH model
-fit <- ugarchfit(data = data1, multispec = list(spec1, spec2), solver = "hybrid")
+# trying a skewed student t with GARCH(1,1), ARIMA model set at (0,1,1) due to unit root presence:
+mean.model1 <- arima(data[, "Goiania"], order = c(0, 1, 1), seasonal = list(order = c(2, 0, 0), period = 12))
+mean.model2 <- arima(data[, "Brasilia"], order = c(0, 1, 1), seasonal = list(order = c(1, 0, 2), period = 12), xreg = 1:length(data[, 2]))
 
+spec1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model1$coef), distribution.model = "sstd")
+spec2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model2$coef), distribution.model = "sstd")
 
-#spec <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1,1)),
-              #     mean.model = list(armaOrder = c(fit_arima_x$arma[1],
-              #    fit_arima_y$arma[1])), distribution.model = "sstd")
-#fit <- ugarchfit(spec, data = data1, solver.control = list(trace=0))
-fit # AIC is 7.6397
-aic <- 7.6397
+dccspec1 <- dccspec(uspec = multispec(list(spec1, spec2)), dccOrder = c(1,1), distribution = "mvt")
+
+dccfit1 <- dccfit(dccspec1, data = data1)
+dccfit1 # AIC is 16.862
+
+aic <- 16.862
 ```
 
 ```{r}
 ##GARCH(1,0)
-spec2 <- ugarchspec(variance.model = list(model = "sGARCH",
-        garchOrder = c(1,0)),mean.model = list(armaOrder = 
-        c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sstd")
-fit2 <- ugarchfit(spec2, data = data1, solver.control = list(trace=0))
-fit2 # AIC is 7.6485
-aic <- c(aic, 7.6485)
+spec1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 0)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model1$coef), distribution.model = "sstd")
+spec2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 0)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model2$coef), distribution.model = "sstd")
+
+dccspec2 <- dccspec(uspec = multispec(list(spec1, spec2)), dccOrder = c(1,1), distribution = "mvt")
+
+dccfit2 <- dccfit(dccspec2, data = data1)
+dccfit2 # AIC is 16.986
+
+aic <- c(aic, 16.986)
 ```
 
 ```{r}
 #GARCH(0,1)
-spec3 <- ugarchspec(variance.model = list(model = "sGARCH",
-      garchOrder = c(0,1)),mean.model = list(armaOrder = 
-      c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sstd")
-fit3 <- ugarchfit(spec3, data = data1, solver.control = list(trace=0))
-fit3 # AIC is 7.7643
-aic <- c(aic, 7.7643)
+spec1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(0, 1)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model1$coef), distribution.model = "sstd")
+spec2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(0, 1)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model2$coef), distribution.model = "sstd")
+
+dccspec3 <- dccspec(uspec = multispec(list(spec1, spec2)), dccOrder = c(1,1), distribution = "mvt")
+
+dccfit3 <- dccfit(dccspec3, data = data1)
+dccfit3 # AIC is 17.597
+
+aic <- c(aic, 17.597)
 ```
 
 ```{r}
 ##Trying a skewed-ged with GARCH(1,1):
-spec4 <- ugarchspec(variance.model = list(model = "sGARCH",
-       garchOrder = c(1,1)),mean.model = list(armaOrder = 
-       c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sged")
-fit4 <- ugarchfit(spec4, data = data1, solver.control = list(trace=0))
-fit4 # AIC is 7.6602
-aic <- c(aic, 7.6602)
+spec1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model1$coef), distribution.model = "sged")
+spec2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model2$coef), distribution.model = "sged")
+
+dccspec4 <- dccspec(uspec = multispec(list(spec1, spec2)), dccOrder = c(1,1), distribution = "mvt")
+
+dccfit4 <- dccfit(dccspec4, data = data1)
+dccfit4 # AIC is 16.946
+aic <- c(aic, 16.946)
 ```
 
 ```{r}
-#GARCH(1,0)
-spec5 <- ugarchspec(variance.model = list(model = "sGARCH",
-      garchOrder = c(1,0)),mean.model = list(armaOrder = 
-      c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sged")
-fit5 <- ugarchfit(spec5, data = data1, solver.control = list(trace=0))
-fit5 # AIC is 66.871
-aic <- c(aic, 66.871)
+#GARCH(2,0) with skewed-ged 
+spec1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(2, 0)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model1$coef), distribution.model = "sged")
+spec2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(2, 0)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model2$coef), distribution.model = "sged")
+
+dccspec5 <- dccspec(uspec = multispec(list(spec1, spec2)), dccOrder = c(1,1), distribution = "mvt")
+
+dccfit5 <- dccfit(dccspec5, data = data1)
+dccfit5 # AIC is 16.992
+aic <- c(aic, 16.992)
 ```
 
 ```{r}
-#GARCH(0,1)
-spec6 <- ugarchspec(variance.model = list(model = "sGARCH",
-      garchOrder = c(0,1)),mean.model = list(armaOrder = 
-      c(fit_arima_x$arma[1], fit_arima_y$arma[1])), distribution.model = "sged")
-fit6 <- ugarchfit(spec6, data = data1, solver.control = list(trace=0))
-fit6 # AIC is 7.7675
-aic <- c(aic, 7.7675)
+#GARCH(0,1) with skewed-ged
+spec1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(0, 1)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model1$coef), distribution.model = "sged")
+spec2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(0, 1)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model2$coef), distribution.model = "sged")
+
+dccspec6 <- dccspec(uspec = multispec(list(spec1, spec2)), dccOrder = c(1,1), distribution = "mvt")
+
+dccfit6 <- dccfit(dccspec6, data = data1)
+dccfit6 # AIC is 26.133
+aic <- c(aic, 26.133)
 ```
 
 ```{r}
 ### Trying higher order GARCH models under skewed t-dist
-spec7 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(2,2)),
-                   mean.model = list(armaOrder = c(fit_arima_x$arma[1],
-                    fit_arima_y$arma[1])), distribution.model = "sstd")
-fit7 <- ugarchfit(spec7, data = data1, solver.control = list(trace=0))
-fit7 # AIC is 7.6397
-aic <- c(aic, 7.6397)
-```
+spec1 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(2, 2)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model1$coef), distribution.model = "sstd")
+spec2 <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(2, 2)),
+                   mean.model = list(armaOrder=c(0, 0), arfima = mean.model2$coef), distribution.model = "sstd")
 
-```{r}
-### Returns the same AIC value as GARCH(1,1), we shall disregard models
-### 2-7 as they did not perform as well as model 1 or parsimony dictates
-### we use simpler models with similar results.
+dccspec7 <- dccspec(uspec = multispec(list(spec1, spec2)), dccOrder = c(1,1), distribution = "mvt")
 
-#Getting the ACF and PACF 
-resid1 <- fit@fit$residuals
-se1 <- fit@fit$sigma
-std_re <- resid1/se1
-adf.test(resid1)
-adf.test(std_re)
-plot(std_re, main = "Standardized Residual Plot", type = "l")
-TSA::acf(std_re)
-pacf(std_re)
-```
-
-```{r}
-### There appears to be no unit root present in the data! Also the 
-### standardized residuals show no obvious heteroskedasicity! 
-
-
-### Keeping the below code for now because it may serve a purpose. 
-### Using fit one since it had the lowest AIC and the difference series 
-### looks pretty good relative to non-differenced!
-
-resid2 <- fit2@fit$residuals
-se2 <- fit2@fit$sigma
-std_re2 <- resid2/se2
-resid3 <- fit3@fit$residuals
-se3 <- fit3@fit$sigma
-std_re3 <- resid3/se3
-resid4 <- fit4@fit$residuals
-se4 <- fit4@fit$sigma
-std_re4 <- resid4/se4
-resid5 <- fit5@fit$residuals
-se5 <- fit5@fit$sigma
-std_re5 <- resid5/se5
-resid6 <- fit6@fit$residuals
-se6 <- fit6@fit$sigma
-std_re6 <- resid6/se6
-```
-
-```{r}
-acf(resid1, lag.max = 12, main = "ACF for Fit 1")
-acf(std_re, lag.max = 12, main = "ACF for stdzd Fit 1")
-acf(resid2, lag.max = 12, main = "ACF for Fit 2")
-acf(resid3, lag.max = 12, main = "ACF for Fit 3")
-acf(resid4, lag.max = 12, main = "ACF for Fit 4")
-acf(resid5, lag.max = 12, main = "ACF for Fit 5")
-acf(resid6, lag.max = 12, main = "ACF for Fit 6")
-```
-
-```{r}
-pacf(resid1, lag.max = 12, main = "PACF for Fit 1")
-pacf(resid2, lag.max = 12, main = "PACF for Fit 2")
-pacf(resid3, lag.max = 12, main = "PACF for Fit 3")
-pacf(resid4, lag.max = 12, main = "PACF for Fit 4")
-pacf(resid5, lag.max = 12, main = "PACF for Fit 5")
-pacf(resid6, lag.max = 12, main = "PACF for Fit 6")
-```
-
-```{r}
-adf.test(resid1)
-adf.test(resid2)
-adf.test(resid3)
-adf.test(resid4)
-adf.test(resid5)
-adf.test(resid6)
+dccfit7 <- dccfit(dccspec7, data = data1)
+dccfit7 # AIC is 17.081
+aic <- c(aic, 17.081)
 ```
 
 ```{r}
 aic
+
+### we shall disregard models
+### 2-7 as they did not perform as well as model 1 or parsimony dictates
+### we use simpler models with similar results.
 ```
+
+```{r}
+#Getting the ACF and PACF 
+resid1 <- dccfit1@mfit$stdresid # gives a table with 2 columns, since the data is bivariate
+# ADF test
+adf.test(resid1[,1])
+adf.test(resid1[,2])
+
+plot(resid1[,1], xlab = "Time", ylab = "Value", main = "Standardized Residual Plot", col = 1, type = 'l')
+lines(resid1[,2], col = "blue")
+legend(x = "top", c("Goiania", "Brasilia"), col = c(1, "blue"), lty = c(1, 1))
+
+# ACF plot
+par(mfrow = c(1, 2))
+TSA::acf(resid1[, 1], main = "ACF for Fit 1 - Goiania")
+TSA::acf(resid1[, 2], main = "ACF for Fit 1 - Brasilia")
+# PACF plot
+par(mfrow = c(1, 2))
+pacf(resid1[,1], main = "")
+title("PACF for Fit 1 - Goiania")
+pacf(resid1[,2], main = "")
+title("PACF for Fit 1 - Brasilia")
+
+resid2 <- dccfit2@mfit$stdresid
+resid3 <- dccfit3@mfit$stdresid
+resid4 <- dccfit4@mfit$stdresid
+resid5 <- dccfit5@mfit$stdresid
+resid6 <- dccfit6@mfit$stdresid
+resid7 <- dccfit7@mfit$stdresid
+```
+
+```{r}
+par(mfrow = c(1, 2))
+TSA::acf(resid1[, 1], main = "ACF for Fit 1 - Goiania")
+TSA::acf(resid1[, 2], main = "ACF for Fit 1 - Brasilia")
+par(mfrow = c(1, 2))
+TSA::acf(resid2[, 1], main = "ACF for Fit 2 - Goiania")
+TSA::acf(resid2[, 2], main = "ACF for Fit 2 - Brasilia")
+par(mfrow = c(1, 2))
+TSA::acf(resid3[, 1], main = "ACF for Fit 3 - Goiania")
+TSA::acf(resid3[, 2], main = "ACF for Fit 3 - Brasilia")
+par(mfrow = c(1, 2))
+TSA::acf(resid4[, 1], main = "ACF for Fit 4 - Goiania")
+TSA::acf(resid4[, 2], main = "ACF for Fit 4 - Brasilia")
+par(mfrow = c(1, 2))
+TSA::acf(resid5[, 1], main = "ACF for Fit 5 - Goiania")
+TSA::acf(resid5[, 2], main = "ACF for Fit 5 - Brasilia")
+par(mfrow = c(1, 2))
+TSA::acf(resid6[, 1], main = "ACF for Fit 6 - Goiania")
+TSA::acf(resid6[, 2], main = "ACF for Fit 6 - Brasilia")
+par(mfrow = c(1, 2))
+TSA::acf(resid7[, 1], main = "ACF for Fit 7 - Goiania")
+TSA::acf(resid7[, 2], main = "ACF for Fit 7 - Brasilia")
+```
+
+```{r}
+par(mfrow = c(1, 2))
+pacf(resid1[,1], main = "")
+title("PACF for Fit 1 - Goiania")
+pacf(resid1[,2], main = "")
+title("PACF for Fit 1 - Brasilia")
+
+par(mfrow = c(1, 2))
+pacf(resid2[,1], main = "")
+title("PACF for Fit 2 - Goiania")
+pacf(resid2[,2], main = "")
+title("PACF for Fit 2 - Brasilia")
+
+par(mfrow = c(1, 2))
+pacf(resid3[,1], main = "")
+title("PACF for Fit 3 - Goiania")
+pacf(resid3[,2], main = "")
+title("PACF for Fit 3 - Brasilia")
+
+par(mfrow = c(1, 2))
+pacf(resid4[,1], main = "")
+title("PACF for Fit 4 - Goiania")
+pacf(resid4[,2], main = "")
+title("PACF for Fit 4 - Brasilia")
+
+par(mfrow = c(1, 2))
+pacf(resid5[,1], main = "")
+title("PACF for Fit 5 - Goiania")
+pacf(resid5[,2], main = "")
+title("PACF for Fit 5 - Brasilia")
+
+par(mfrow = c(1, 2))
+pacf(resid6[,1], main = "")
+title("PACF for Fit 6 - Goiania")
+pacf(resid6[,2], main = "")
+title("PACF for Fit 6 - Brasilia")
+
+par(mfrow = c(1, 2))
+pacf(resid7[,1], main = "")
+title("PACF for Fit 7 - Goiania")
+pacf(resid7[,2], main = "")
+title("PACF for Fit 7 - Brasilia")
+```
+
+Even the best fit model out of these 7 models was not able to perform well on the data. So, we move on to try and fit the newly proposed BCP-INGARCH(1, 1) model to our data to compare the fit of this new model with the models we have already built.
 
 MODEL USED IN THE PAPER
 
@@ -326,3 +415,4 @@ print("Non-Diagonal Model")
 model_information(fit_nd)
 ```
 
+The AIC of both the diagonal and non-diagonal models is much, much lower than for any of the models we fit earlier.
